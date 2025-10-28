@@ -24,6 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug GitHub claims
+        run: |
+         echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
+         echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
+         echo "GITHUB_REF           = $GITHUB_REF"
+
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:

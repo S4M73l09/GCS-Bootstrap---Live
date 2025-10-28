@@ -26,7 +26,7 @@ variable "github_repo" {
 
 variable "repo_id" {
   type    = string
-  default = "50858453" # ID numérico del repo, pero como string
+  default = "1083637831" # ID numérico del repo, pero como string
 }
 
 variable "branch_ref" {
