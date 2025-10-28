@@ -1,0 +1,49 @@
+name: Bootstrap Plan
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "Bootstrap/**" ]
+  pull_request:
+    paths: [ "Bootstrap/**" ]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: bootstrap-plan
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ./Bootstrap
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.TF_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+
+
