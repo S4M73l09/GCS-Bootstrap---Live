@@ -2,9 +2,10 @@ name: Bootstrap Plan
 on:
   push:
     branches: [ "main" ]
-    paths: [ "Bootstrap/**" ]
-  pull_request:
-    paths: [ "Bootstrap/**" ]
+   # paths: [ "Bootstrap/**" ]
+  #pull_request:
+   # paths: [ "Bootstrap/**" ]
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -16,7 +17,7 @@ concurrency:
 
 defaults:
   run:
-  #  working-directory: ./Bootstrap
+    working-directory: ./Bootstrap
 
 jobs:
   plan:
