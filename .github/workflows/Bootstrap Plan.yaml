@@ -37,6 +37,9 @@ jobs:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.TF_SA_EMAIL }}
 
+      - name: Debug ADC
+        run: gcloud auth application-default print-access-token >/dev/null && echo "ADC OK"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
