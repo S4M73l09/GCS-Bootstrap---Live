@@ -45,4 +45,11 @@ resource "google_service_account_iam_binding" "wif_binding" {
   members = [
     local.principal_member
   ]
+
+  resource "google_service_account_iam_binding" "wif_token_creator" {
+  service_account_id = google_service_account.runner.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  members            = [ local.principal_member ]
+}
+
 }

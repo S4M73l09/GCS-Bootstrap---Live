@@ -127,19 +127,77 @@ terraform {
 #### 1.9 Workflow de GitHub Actions (Bootstrap)
 .github/workflows/bootstrap.yml (Sujeto a cambios):    
 
+Workflow Plan
 ```yaml
-name: Bootstrap Apply
+name: Bootstrap Plan
 on:
   push:
     branches: [ "main" ]
+    paths: [ "Bootstrap/**" ]
+  pull_request:
+    paths: [ "Bootstrap/**" ]
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
+  group: bootstrap-plan
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ./Bootstrap
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Debug GitHub claims
+        run: |
+         echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
+         echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
+         echo "GITHUB_REF           = $GITHUB_REF"
+
+      - name: Auth to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.TF_SA_EMAIL }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+```
+Workflow Apply
+```yaml
+name: Bootstrap Apply
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+environment: bootstrap
+
+concurrency:
   group: bootstrap-apply
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ./Bootstrap
 
 jobs:
   apply:
@@ -153,30 +211,21 @@ jobs:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.TF_SA_EMAIL }}
 
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      - name: Debug ADC
+        run: gcloud auth application-default print-access-token >/dev/null && echo "ADC OK"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
 
-      - name: Cache .terraform
-        uses: actions/cache@v4
-        with:
-          path: ./.terraform
-          key: tf-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+      - name: Terraform Init
+        run: terraform init -input=false
 
-      - name: Terraform Init/Plan/Apply
-        run: |
-          terraform init -input=false
-          terraform plan -input=false -out=tfplan
-          terraform apply -input=false -auto-approve tfplan
-```
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve
 
-
+```  
   ***Por qué:*** solo se ejecuta en main, autentica por WIF, fija versión de Terraform y evita carreras.
 
 ### 2) Backend y configuracion de Terraform (Bootstrap)  
@@ -320,6 +369,42 @@ gcloud iam service-accounts get-iam-policy \
 
 
 ## 3) Troubleshooting (ultra resumido)
+
+* Error en argumento gcloud set  
+Debido a que ya Terraform se autentica, no es necesario tener dicho argumento en el workflow por que da error, lo mejor es que Terraform se autentique solo con los datos dados.
+
+* Error en el uso de IAM por falta de api
+Este error se soluciona activando una API necesaria: 
+```bash
+gcloud services enable iamcredentials.googleapis.com --project bootstrap-476212
+```  
+* Añadimos el rol Service Account Token Creator a la SA para el principal de WIF:
+```hcl
+# Binding WIF existente (se mantiene)
+resource "google_service_account_iam_binding" "wif_binding" {
+  service_account_id = google_service_account.runner.name
+  role               = "roles/iam.workloadIdentityUser"
+  members            = [ local.principal_member ]
+}
+
+# ➕ Permiso para emitir access tokens
+resource "google_service_account_iam_binding" "wif_token_creator" {
+  service_account_id = google_service_account.runner.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  members            = [ local.principal_member ]
+}
+```  
+* Import ultimo que fallaba
+Cannot find binding ... al importar google_service_account_iam_member.
+Se soluciona importando por rol, asi se soluciona:
+```hcl
+resource "google_service_account_iam_binding" "wif_binding" { ... }
+```  
+```bash
+terraform import google_service_account_iam_binding.wif_binding \
+"projects/bootstrap-476212/serviceAccounts/terraform-bootstrap@bootstrap-476212.iam.gserviceaccount.com roles/iam.workloadIdentityUser"
+```  
+
 
 * Issuer incorrecto  
 Debe ser exacto: https://token.actions.githubusercontent.com/.
