@@ -370,14 +370,74 @@ gcloud iam service-accounts get-iam-policy \
 
 ## 3) Troubleshooting (ultra resumido)
 
+* OIDC con GitHub Actions y Google Cloud  
+Al ejecutar el workflow de Terraform en GitHub Actions con autenticación OIDC contra Google Cloud, fallaba la parte de autenticación con este error:  
+```text
+ERROR: (gcloud.auth.application-default.print-access-token) There was a problem refreshing your current auth tokens: ('Unable to acquire impersonated credentials'. 
+"Permission 'iam.serviceAccounts.getAccessToken' denied on resource (or it may not exist)." 
+status: "PERMISSION_DENIED"
+permission: "iam.serviceAccounts.getAccessToken"
+)
+```  
+Este es un fallo de comunicacion, a la hora de crear los atributos necesarios para el uso del token OIDC, Github esperaba un token que no llegaba debido a que dichos atributos estaban configurados para que viesen el nombre del repositorio y no por id como se tenia planeado.
+
+Para solucionarlo, se añadieron dos lineas atributo para que la comunicacion de Github Actions y google fuese efectiva y escuchase por id mas que por nombre.  
+
+      Ir a IAM & Admin → Workload Identity Federation → [mi pool] → [mi provider OIDC] → Editar.
+
+En "Asignación de atributos" añadí estas líneas nuevas:
+```text
+attribute.repository_id = assertion.repository_id
+attribute.actor_id      = assertion.actor_id   # opcional, solo si quieres atarlo también al usuario que dispara el workflow
+```  
+Luego, en "Condiciones de atributos" añadí una condición CEL para restringir quién puede autenticarse:
+```cel
+assertion.repository_id == '1083637831' && assertion.ref == 'refs/heads/main'
+```  
+Esto significa:
+
+  + Solo el repo con el id Real puede comunicarse
+  + y solo con la rama main
+
+Asi evito forks o ramas random usen mi identidad de Google Cloud.
+
+y por ultimo dar acceso a la Service Account desde su propia pagina.  
+En Google Console o por CLI, esto ya va a gusto de cualquiera:  
+
+  + Ir a IAM & Admin → Service Accounts.
+  + Entrar en la service account usada por Terraform (ej: terraform-bootstrap@...).
+  +  Ir a la pestaña "Principales con acceso" (esto es quién puede usarla/impersonarla).
+  +  Pulsar "➕ Otorgar acceso".
+
+En el campo "Nuevos principales" añadí un principal con este formato:
+```text
+principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_NAME/attribute.repository_id/1083637831
+```  
+Donde:
+  + PROJECT_NUMBER = número interno del proyecto de GCP (no el ID legible, el número largo).
+  + POOL_NAME = el nombre de mi Workload Identity Pool.
+  + 1083637831 = el repository_id del repo real de GitHub (lo saqué con curl https://api.github.com/repos/OWNER/REPO).  
+Guardar
+
+Después, a ese principal le asigné SOLO estos dos roles sobre la service account:  
+  + roles/iam.workloadIdentityUser (Usuario de identidades de cargas de trabajo)
+  * roles/iam.serviceAccountTokenCreator (Creador de tokens de cuenta de servicio)  
+Guardar  
+
+Despues de esto, el paso de usar OIDC funciono sin problemas, iniciando Terraform.
+
+-----
+
 * Error en argumento gcloud set  
 Debido a que ya Terraform se autentica, no es necesario tener dicho argumento en el workflow por que da error, lo mejor es que Terraform se autentique solo con los datos dados.
+----
 
 * Error en el uso de IAM por falta de api
 Este error se soluciona activando una API necesaria: 
 ```bash
 gcloud services enable iamcredentials.googleapis.com --project bootstrap-476212
 ```  
+----
 * Añadimos el rol Service Account Token Creator a la SA para el principal de WIF:
 ```hcl
 # Binding WIF existente (se mantiene)
@@ -394,6 +454,7 @@ resource "google_service_account_iam_binding" "wif_token_creator" {
   members            = [ local.principal_member ]
 }
 ```  
+----
 * Import ultimo que fallaba
 Cannot find binding ... al importar google_service_account_iam_member.
 Se soluciona importando por rol, asi se soluciona:
@@ -404,7 +465,7 @@ resource "google_service_account_iam_binding" "wif_binding" { ... }
 terraform import google_service_account_iam_binding.wif_binding \
 "projects/bootstrap-476212/serviceAccounts/terraform-bootstrap@bootstrap-476212.iam.gserviceaccount.com roles/iam.workloadIdentityUser"
 ```  
-
+---
 
 * Issuer incorrecto  
 Debe ser exacto: https://token.actions.githubusercontent.com/.

@@ -39,17 +39,16 @@ resource "google_iam_workload_identity_pool_provider" "provider" {
 }
 
 # --- Binding: permitir al repo asumir la SA (sin condición; la restricción está en el provider) ---
-resource "google_service_account_iam_binding" "wif_binding" {
+resource "google_service_account_iam_member" "wif_binding" {
   service_account_id = google_service_account.runner.name
   role               = "roles/iam.workloadIdentityUser"
-  members = [
-    local.principal_member
-  ]
+  member             = local.principal_member
+}
 
-  resource "google_service_account_iam_binding" "wif_token_creator" {
+resource "google_service_account_iam_member" "wif_token_creator" {
   service_account_id = google_service_account.runner.name
   role               = "roles/iam.serviceAccountTokenCreator"
-  members            = [ local.principal_member ]
+  member             = local.principal_member
 }
 
 }
