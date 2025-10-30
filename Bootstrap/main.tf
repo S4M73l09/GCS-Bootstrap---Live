@@ -50,5 +50,3 @@ resource "google_service_account_iam_member" "wif_token_creator" {
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = local.principal_member
 }
-
-}
