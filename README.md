@@ -366,9 +366,44 @@ gcloud iam service-accounts get-iam-policy \
   terraform-bootstrap@bootstrap-476212.iam.gserviceaccount.com \
   --project=bootstrap-476212 --format=yaml
 ```
+## 3) Roles finales necesarias que necesita la service Account del pipeline Bootstrap
 
+La service account que usa el workflow (**terraform-bootstrap@...**) debe tener IAM del proyecto:
 
-## 3) Troubleshooting (ultra resumido)
+* Creador de tokens de cuenta de servicio.  
+  <roles/iam.serviceAccountTokenCreator>  
+* Usuario de identidades de cargas de trabajo  
+  <roles/iam.workloadIdentityUser>  
+* Administrador de cuenta de servicio  
+  <roles/iam.serviceAccountAdmin>  
+* Administrador de grupos de Workload Identity de IAM(Beta)  
+  <roles/iam.workloadIdentityPoolAdmin>  
+
+Eso es lo que desbloquea:
+
+* Lectura/escritura de IAM en la service account  
+* lectura/gestion del Workload Identity Poll y Provider  
+* emision de OIDC  
+* impersonacion  
+
+### 3.1) Componentes que ya gestionas vía Terraform (IaC real)
+
+Terraform ahora mismo ya es dueño de:  
+
+* la service account runner (o importada)  
+* los binding IAM (google_service_account_iam_member)  
+* el workload Identity Pool y Provider (incluyendo las condiciones CEL con repo_id y rama)  
+* el resto de infra del proyecto  
+
+Eso significa que repetir este setup en otro proyecto cloud es, básicamente:
+
+* Crear proyecto vacio  
+* dar a la nueva SA permisos equivalentes  
+* correr terraform  
+
+Esto industrializa el Bootstrap
+
+## 4) Troubleshooting (ultra resumido)
 
 * OIDC con GitHub Actions y Google Cloud  
 Al ejecutar el workflow de Terraform en GitHub Actions con autenticación OIDC contra Google Cloud, fallaba la parte de autenticación con este error:  

@@ -22,6 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug Github context
+        run: |
+          echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
+          echo "GITHUB_REF           = $GITHUB_REF"
+
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
@@ -39,5 +45,15 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
+      - name: terraform Plan (preview)
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Check for destroy actions
+        run: |
+          terraform show -no-color tfplan | grep '^- ' && {
+            echo "ERROR: Plan includes destroy, refusing to auto-apply"
+            exit 1
+          } || echo "No destroy detected"
+
       - name: Terraform Apply
-        run: terraform apply -input=false -auto-approve
+        run: terraform apply -input=false -auto-approve tfplan 
