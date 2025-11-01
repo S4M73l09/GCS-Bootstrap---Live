@@ -23,6 +23,7 @@ defaults:
 jobs:
   plan:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,7 +50,7 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
-      # 0 = no changes, 2 = changes, 1 = error
+      # 0 = sin cambios, 2 = hay cambios, 1 = error
       - name: Terraform Plan (detailed exit code)
         id: plan
         shell: bash
@@ -57,15 +58,15 @@ jobs:
           set +e
           terraform plan -input=false -lock-timeout=3m -out=tfplan -detailed-exitcode
           ec=$?
-          echo "exitcode=$ec" >> $GITHUB_OUTPUT
+          echo "exitcode=$ec" >> "$GITHUB_OUTPUT"
           if [ "$ec" -eq 2 ]; then
-            echo "changed=true"  >> $GITHUB_OUTPUT
+            echo "changed=true"  >> "$GITHUB_OUTPUT"
             exit 0
           elif [ "$ec" -eq 0 ]; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            exit $ec
+            exit "$ec"
           fi
 
       - name: Upload tfplan artifact
@@ -73,8 +74,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
-          path: tfplan
-          retention-days: 3
+          # ruta absoluta al fichero dentro del repo, no depende de defaults.run
+          path: ${{ github.workspace }}/Bootstrap/tfplan
+          retention-days: 14
 
 
 

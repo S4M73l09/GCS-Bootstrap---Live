@@ -2,7 +2,7 @@ name: Bootstrap Apply
 
 on:
   workflow_run:
-    workflows: ["Bootstrap-Plan"]      # nombre EXACTO del workflow de plan
+    workflows: ["Bootstrap Plan"]      # nombre EXACTO del workflow de plan
     types: [completed]
     branches: [main]
 
