@@ -2,14 +2,14 @@ name: Bootstrap Apply
 
 on:
   workflow_run:
-    workflows: ["Bootstrap Plan"]      # nombre EXACTO del workflow de plan
+    workflows: ["Bootstrap Plan"]     # ← nombre EXACTO del workflow de plan
     types: [completed]
     branches: [main]
 
 permissions:
   id-token: write
   contents: read
-  actions: read
+  actions: read                       # ← necesario para listar/descargar artefactos
 
 concurrency:
   group: bootstrap-apply
@@ -21,11 +21,10 @@ defaults:
 
 jobs:
   detect:
-    # solo si el plan terminó OK
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
-      has_tfplan: ${{ steps.find.outputs.has_tfplan }}
+      has_tfplan:  ${{ steps.find.outputs.has_tfplan }}
       plan_run_id: ${{ github.event.workflow_run.id }}
     steps:
       - uses: actions/checkout@v4
@@ -44,25 +43,29 @@ jobs:
             const a = data.artifacts.find(x => x.name === 'tfplan' && !x.expired);
             core.setOutput('has_tfplan', a ? 'true' : 'false');
 
+      - name: Echo has_tfplan (debug)
+        run: echo "has_tfplan = ${{ steps.find.outputs.has_tfplan }}"
+
   apply:
     needs: detect
     if: ${{ needs.detect.outputs.has_tfplan == 'true' }}
     runs-on: ubuntu-latest
-    environment: bootstrap         # <— aprobación aquí, a nivel de job
+    environment: bootstrap            # ← aquí te pedirá aprobación (Configura Environments)
     steps:
       - uses: actions/checkout@v4
 
-      - name: Auth via WIF
+      - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account:           ${{ secrets.TF_SA_EMAIL }}
 
-      - uses: hashicorp/setup-terraform@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
 
-      - name: Terraform init
+      - name: Terraform Init
         run: terraform init -input=false
 
       - name: Download tfplan from Plan run
@@ -72,6 +75,18 @@ jobs:
           path: Bootstrap
           run-id: ${{ needs.detect.outputs.plan_run_id }}
 
+      # Opcional: muestra el plan de texto si también se sube en el Plan
+      # - name: Download plan.txt
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: plan.txt
+      #     path: Bootstrap
+      #     run-id: ${{ needs.detect.outputs.plan_run_id }}
+      # - name: Show plan.txt
+      #   run: |
+      #     echo "---- Plan (text) ----"
+      #     cat plan.txt || true
+
       - name: Check for destroy actions
         run: |
           terraform show -no-color tfplan | grep -q '^- ' && {
@@ -79,6 +94,7 @@ jobs:
             exit 1
           } || echo "No destroy detected"
 
-      - name: Terraform apply
+      - name: Terraform Apply
         run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan
+
 

@@ -23,7 +23,6 @@ defaults:
 jobs:
   plan:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -69,13 +68,28 @@ jobs:
             exit "$ec"
           fi
 
+      - name: Echo changed (debug)
+        run: echo "changed=${{ steps.plan.outputs.changed }} exitcode=${{ steps.plan.outputs.exitcode }}"
+
       - name: Upload tfplan artifact
         if: steps.plan.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
-          # ruta absoluta al fichero dentro del repo, no depende de defaults.run
           path: ${{ github.workspace }}/Bootstrap/tfplan
+          retention-days: 3
+
+      # Opcional: artefacto de texto legible
+      - name: Render plan to text
+        if: steps.plan.outputs.changed == 'true'
+        run: terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan.txt
+        if: steps.plan.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan.txt
+          path: ${{ github.workspace }}/Bootstrap/plan.txt
           retention-days: 14
 
 
