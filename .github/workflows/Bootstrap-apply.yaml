@@ -6,8 +6,6 @@ permissions:
   id-token: write
   contents: read
 
-environment: bootstrap
-
 concurrency:
   group: bootstrap-apply
   cancel-in-progress: true
@@ -18,6 +16,7 @@ defaults:
 
 jobs:
   apply:
+    environment: bootstrap
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,14 +45,14 @@ jobs:
         run: terraform init -input=false
 
       - name: terraform Plan (preview)
-        run: terraform plan -input=false -out=tfplan
+        run: terraform plan -input=false -lock-timeout=3m -out=tfplan
 
       - name: Check for destroy actions
         run: |
-          terraform show -no-color tfplan | grep '^- ' && {
+          terraform show -no-color tfplan | grep -q '^- ' && {
             echo "ERROR: Plan includes destroy, refusing to auto-apply"
             exit 1
           } || echo "No destroy detected"
 
       - name: Terraform Apply
-        run: terraform apply -input=false -auto-approve tfplan 
+        run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan 

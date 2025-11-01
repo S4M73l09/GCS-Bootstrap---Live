@@ -189,8 +189,6 @@ permissions:
   id-token: write
   contents: read
 
-environment: bootstrap
-
 concurrency:
   group: bootstrap-apply
   cancel-in-progress: true
@@ -201,9 +199,16 @@ defaults:
 
 jobs:
   apply:
+    environment: bootstrap
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Debug Github context
+        run: |
+          echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
+          echo "GITHUB_REF           = $GITHUB_REF"
 
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
@@ -222,8 +227,18 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
+      - name: terraform Plan (preview)
+        run: terraform plan -input=false -lock-timeout=3m -out=tfplan
+
+      - name: Check for destroy actions
+        run: |
+          terraform show -no-color tfplan | grep -q '^- ' && {
+            echo "ERROR: Plan includes destroy, refusing to auto-apply"
+            exit 1
+          } || echo "No destroy detected"
+
       - name: Terraform Apply
-        run: terraform apply -input=false -auto-approve
+        run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan 
 
 ```  
   ***Por qué:*** solo se ejecuta en main, autentica por WIF, fija versión de Terraform y evita carreras.
