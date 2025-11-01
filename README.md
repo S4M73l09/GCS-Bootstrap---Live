@@ -129,14 +129,15 @@ terraform {
 
 Workflow Plan
 ```yaml
-name: Bootstrap Plan
+name: Bootstrap-Plan
+
 on:
   push:
     branches: [ "main" ]
-    paths: [ "Bootstrap/**" ]
+    paths:   [ "Bootstrap/**" ]
   pull_request:
-    paths: [ "Bootstrap/**" ]
-  workflow_dispatch:
+    paths:   [ "Bootstrap/**" ]
+  workflow_dispatch: {}
 
 permissions:
   id-token: write
@@ -158,63 +159,15 @@ jobs:
 
       - name: Debug GitHub claims
         run: |
-         echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
-         echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
-         echo "GITHUB_REF           = $GITHUB_REF"
+          echo "GITHUB_REPOSITORY     = $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_ID  = $GITHUB_REPOSITORY_ID"
+          echo "GITHUB_REF            = $GITHUB_REF"
 
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.TF_SA_EMAIL }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.5
-
-      - name: Terraform Init
-        run: terraform init -input=false
-
-      - name: Terraform Plan
-        run: terraform plan -input=false -out=tfplan
-```
-Workflow Apply
-```yaml
-name: Bootstrap Apply
-on:
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
-concurrency:
-  group: bootstrap-apply
-  cancel-in-progress: true
-
-defaults:
-  run:
-    working-directory: ./Bootstrap
-
-jobs:
-  apply:
-    environment: bootstrap
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Debug Github context
-        run: |
-          echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
-          echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
-          echo "GITHUB_REF           = $GITHUB_REF"
-
-      - name: Auth to GCP via WIF
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.TF_SA_EMAIL }}
+          service_account:           ${{ secrets.TF_SA_EMAIL }}
 
       - name: Debug ADC
         run: gcloud auth application-default print-access-token >/dev/null && echo "ADC OK"
@@ -227,10 +180,125 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
-      - name: terraform Plan (preview)
-        run: terraform plan -input=false -lock-timeout=3m -out=tfplan
+      # 0 = no changes, 2 = changes, 1 = error
+      - name: Terraform Plan (detailed exit code)
+        id: plan
+        shell: bash
+        run: |
+          set +e
+          terraform plan -input=false -lock-timeout=3m -out=tfplan -detailed-exitcode
+          ec=$?
+          echo "exitcode=$ec" >> $GITHUB_OUTPUT
+          if [ "$ec" -eq 2 ]; then
+            echo "changed=true"  >> $GITHUB_OUTPUT
+            exit 0
+          elif [ "$ec" -eq 0 ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            exit $ec
+          fi
+
+      - name: Upload tfplan artifact
+        if: steps.plan.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+          retention-days: 3
+```
+Workflow Apply
+```yaml
+name: Bootstrap-Apply
+
+on:
+  workflow_run:
+    workflows: ["Bootstrap-Plan"]   # nombre EXACTO del workflow de plan
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read                     # necesario para listar/descargar artefactos
+
+concurrency:
+  group: bootstrap-apply
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ./Bootstrap
+
+jobs:
+  check-and-apply:
+    # Solo si el Plan terminó OK
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Debug GitHub context
+        run: |
+          echo "PLAN RUN ID           = ${{ github.event.workflow_run.id }}"
+          echo "GITHUB_REPOSITORY     = $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_ID  = $GITHUB_REPOSITORY_ID"
+          echo "GITHUB_REF            = $GITHUB_REF"
+
+      # ¿Existe artefacto "tfplan" en el run del Plan?
+      - name: Find tfplan artifact
+        id: find
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run_id = ${{ github.event.workflow_run.id }};
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              run_id
+            });
+            const a = data.artifacts.find(x => x.name === 'tfplan' && !x.expired);
+            core.setOutput('has_tfplan', a ? 'true' : 'false');
+
+      - name: No changes, skipping
+        if: ${{ steps.find.outputs.has_tfplan != 'true' }}
+        run: echo "No tfplan artifact -> no changes. Skipping apply."
+
+      # === Solo si hay cambios ===
+      - name: Auth to GCP via WIF
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account:           ${{ secrets.TF_SA_EMAIL }}
+
+      - name: Setup Terraform
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform Init
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        run: terraform init -input=false
+
+      - name: Download tfplan from Plan run
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: Bootstrap
+          run-id: ${{ github.event.workflow_run.id }}
+
+      # Gate de aprobación manual SOLO si hay cambios
+      - name: Require approval
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        environment: bootstrap        # configura reviewers en Settings → Environments → bootstrap
+        run: echo "Awaiting approval…"
 
       - name: Check for destroy actions
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
         run: |
           terraform show -no-color tfplan | grep -q '^- ' && {
             echo "ERROR: Plan includes destroy, refusing to auto-apply"
@@ -238,7 +306,9 @@ jobs:
           } || echo "No destroy detected"
 
       - name: Terraform Apply
-        run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan 
+        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan
+
 
 ```  
   ***Por qué:*** solo se ejecuta en main, autentica por WIF, fija versión de Terraform y evita carreras.

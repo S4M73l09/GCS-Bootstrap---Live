@@ -1,11 +1,12 @@
-name: Bootstrap Plan
+name: Bootstrap-Plan
+
 on:
   push:
     branches: [ "main" ]
-    paths: [ "Bootstrap/**" ]
+    paths:   [ "Bootstrap/**" ]
   pull_request:
-    paths: [ "Bootstrap/**" ]
-  workflow_dispatch:
+    paths:   [ "Bootstrap/**" ]
+  workflow_dispatch: {}
 
 permissions:
   id-token: write
@@ -27,15 +28,15 @@ jobs:
 
       - name: Debug GitHub claims
         run: |
-         echo "GITHUB_REPOSITORY    = $GITHUB_REPOSITORY"
-         echo "GITHUB_REPOSITORY_ID = $GITHUB_REPOSITORY_ID"
-         echo "GITHUB_REF           = $GITHUB_REF"
+          echo "GITHUB_REPOSITORY     = $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_ID  = $GITHUB_REPOSITORY_ID"
+          echo "GITHUB_REF            = $GITHUB_REF"
 
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.TF_SA_EMAIL }}
+          service_account:           ${{ secrets.TF_SA_EMAIL }}
 
       - name: Debug ADC
         run: gcloud auth application-default print-access-token >/dev/null && echo "ADC OK"
@@ -48,7 +49,32 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
-      - name: Terraform Plan
-        run: terraform plan -input=false -out=tfplan
+      # 0 = no changes, 2 = changes, 1 = error
+      - name: Terraform Plan (detailed exit code)
+        id: plan
+        shell: bash
+        run: |
+          set +e
+          terraform plan -input=false -lock-timeout=3m -out=tfplan -detailed-exitcode
+          ec=$?
+          echo "exitcode=$ec" >> $GITHUB_OUTPUT
+          if [ "$ec" -eq 2 ]; then
+            echo "changed=true"  >> $GITHUB_OUTPUT
+            exit 0
+          elif [ "$ec" -eq 0 ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            exit $ec
+          fi
+
+      - name: Upload tfplan artifact
+        if: steps.plan.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+          retention-days: 3
+
 
 
