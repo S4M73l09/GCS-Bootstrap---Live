@@ -2,14 +2,14 @@ name: Bootstrap Apply
 
 on:
   workflow_run:
-    workflows: ["Bootstrap Plan"]     # ← nombre EXACTO del workflow de plan
+    workflows: ["Bootstrap Plan"]     # nombre EXACTO del workflow de plan
     types: [completed]
     branches: [main]
 
 permissions:
   id-token: write
   contents: read
-  actions: read                       # ← necesario para listar/descargar artefactos
+  actions: read                       # necesario para listar/descargar artefactos
 
 concurrency:
   group: bootstrap-apply
@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_tfplan:  ${{ steps.find.outputs.has_tfplan }}
+      artifact_id: ${{ steps.find.outputs.artifact_id }}
       plan_run_id: ${{ github.event.workflow_run.id }}
     steps:
       - uses: actions/checkout@v4
@@ -42,15 +43,17 @@ jobs:
             });
             const a = data.artifacts.find(x => x.name === 'tfplan' && !x.expired);
             core.setOutput('has_tfplan', a ? 'true' : 'false');
+            core.setOutput('artifact_id', a ? String(a.id) : '');
+            core.info('Artifacts found: ' + data.artifacts.map(x => `${x.name}#${x.id} expired=${x.expired}`).join(', '));
 
       - name: Echo has_tfplan (debug)
-        run: echo "has_tfplan = ${{ steps.find.outputs.has_tfplan }}"
+        run: echo "has_tfplan=${{ steps.find.outputs.has_tfplan }} artifact_id=${{ steps.find.outputs.artifact_id }} plan_run_id=${{ github.event.workflow_run.id }}"
 
   apply:
     needs: detect
     if: ${{ needs.detect.outputs.has_tfplan == 'true' }}
     runs-on: ubuntu-latest
-    environment: bootstrap            # ← aquí te pedirá aprobación (Configura Environments)
+    environment: bootstrap            # pedirá aprobación aquí
     steps:
       - uses: actions/checkout@v4
 
@@ -68,24 +71,57 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
+      - name: List artifacts (debug)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run_id = ${{ needs.detect.outputs.plan_run_id }};
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              run_id
+            });
+            core.info('Artifacts: ' + data.artifacts.map(a => `${a.name}#${a.id} expired=${a.expired}`).join(', '));
+
       - name: Download tfplan from Plan run
+        id: download_tfplan
         uses: actions/download-artifact@v4
         with:
           name: tfplan
           path: Bootstrap
+          repository: ${{ github.repository }}
           run-id: ${{ needs.detect.outputs.plan_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Opcional: muestra el plan de texto si también se sube en el Plan
-      # - name: Download plan.txt
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: plan.txt
-      #     path: Bootstrap
-      #     run-id: ${{ needs.detect.outputs.plan_run_id }}
-      # - name: Show plan.txt
-      #   run: |
-      #     echo "---- Plan (text) ----"
-      #     cat plan.txt || true
+      # Fallback si la descarga estándar falla (descarga ZIP por API y lo descomprime)
+      - name: Fallback download via API
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const idStr = '${{ needs.detect.outputs.artifact_id }}';
+            if (!idStr) { core.setFailed('No artifact_id to fallback'); return; }
+            const artifact_id = parseInt(idStr, 10);
+            const res = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              artifact_id,
+              archive_format: 'zip'
+            });
+            fs.mkdirSync('Bootstrap', { recursive: true });
+            fs.writeFileSync('Bootstrap/tfplan.zip', Buffer.from(res.data));
+
+      - name: Unzip tfplan (fallback)
+        if: always() && steps.download_tfplan.outcome == 'failure'
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y unzip >/dev/null
+          unzip -o Bootstrap/tfplan.zip -d Bootstrap
+          ls -la Bootstrap
+
+      - name: Ensure tfplan exists
+        run: |
+          test -f tfplan || { echo "tfplan not found"; exit 1; }
 
       - name: Check for destroy actions
         run: |
@@ -96,5 +132,6 @@ jobs:
 
       - name: Terraform Apply
         run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan
+
 
 
