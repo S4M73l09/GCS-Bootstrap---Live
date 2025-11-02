@@ -7,6 +7,12 @@ on:
   pull_request:
     paths:   [ "Bootstrap/**" ]
   workflow_dispatch: {}
+    inputs:
+      force_upload:
+        description: "Upload tfplan even if there no changes"
+        type: boolean
+        default: false
+
 
 permissions:
   id-token: write
@@ -72,7 +78,7 @@ jobs:
         run: echo "changed=${{ steps.plan.outputs.changed }} exitcode=${{ steps.plan.outputs.exitcode }}"
 
       - name: Upload tfplan artifact
-        if: steps.plan.outputs.changed == 'true'
+        if: steps.plan.outputs.changed == 'true' || inputs.force_upload == true
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
@@ -82,9 +88,9 @@ jobs:
       # Opcional: artefacto de texto legible
       - name: Render plan to text
         if: steps.plan.outputs.changed == 'true'
-        run: terraform show -no-color tfplan > plan.txt
+        run: terraform show -no-color tfplan > plan.txt || echo "No tfplan file" > plan.txt
 
-      - name: Upload plan.txt
+      - name: Upload plan.txt (always)
         if: steps.plan.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
