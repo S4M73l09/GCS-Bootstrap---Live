@@ -6,10 +6,11 @@ on:
     paths:   [ "Bootstrap/**" ]
   pull_request:
     paths:   [ "Bootstrap/**" ]
-  workflow_dispatch: {}
+  workflow_dispatch: 
     inputs:
       force_upload:
         description: "Upload tfplan even if there no changes"
+        required: false 
         type: boolean
         default: false
 
@@ -76,6 +77,16 @@ jobs:
 
       - name: Echo changed (debug)
         run: echo "changed=${{ steps.plan.outputs.changed }} exitcode=${{ steps.plan.outputs.exitcode }}"
+
+      - name: Debug force flag
+        run: |
+          echo "force_upload=${{ inputs.force_upload }} | changed=${{ steps.plan.outputs.changed }} | exitcode=${{ steps.plan.outputs.exitcode }}"
+          {
+            echo "### Plan debug";
+            echo "- force_upload: **${{ inputs.force_upload}}**";
+            echo "- changed: **${{ steps.plan.outputs.changed }}**";
+            echo "- exitcode: **${{ steps.plan.outputs.exitcode }}**";
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload tfplan artifact
         if: steps.plan.outputs.changed == 'true' || inputs.force_upload == true
