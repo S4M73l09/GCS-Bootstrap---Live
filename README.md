@@ -685,6 +685,8 @@ Aqui la captura de como esta aplicado correctamente.
         style="max-width:100%;width:100%;height:auto;">
   </video>
 
+  <p><a href="https://github.com/user-attachments/assets/8a3d398d-df9d-4d93-9b2a-17baf0caa1a7?raw=1" target="_blank" rel="noopener">Abrir en nueva Pestaña</a></p>
+
 </details>
 
 <br>  
@@ -701,7 +703,9 @@ Aqui la captura de como esta aplicado correctamente.
         playsinline
         preload="metadata"
         style="max-width:100%;width:100%;height:auto;">
-  </video>      
+  </video>    
+
+  <p><a href="https://github.com/user-attachments/assets/b555dd0d-7ac2-4ab5-9d01-c2bdb76e4f1f?raw=1" target="_blank" rel="noopener">Abrir en nueva Pestaña</a></p>   
 
 </details>   
  
