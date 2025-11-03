@@ -209,18 +209,18 @@ jobs:
 ```
 Workflow Apply
 ```yaml
-name: Bootstrap-Apply
+name: Bootstrap Apply
 
 on:
   workflow_run:
-    workflows: ["Bootstrap-Plan"]   # nombre EXACTO del workflow de plan
+    workflows: ["Bootstrap Plan"]     # nombre EXACTO del workflow de plan
     types: [completed]
     branches: [main]
 
 permissions:
   id-token: write
   contents: read
-  actions: read                     # necesario para listar/descargar artefactos
+  actions: read                       # necesario para listar/descargar artefactos
 
 concurrency:
   group: bootstrap-apply
@@ -231,22 +231,16 @@ defaults:
     working-directory: ./Bootstrap
 
 jobs:
-  check-and-apply:
-    # Solo si el Plan terminó OK
+  detect:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-
+    outputs:
+      has_tfplan:  ${{ steps.find.outputs.has_tfplan }}
+      artifact_id: ${{ steps.find.outputs.artifact_id }}
+      plan_run_id: ${{ github.event.workflow_run.id }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug GitHub context
-        run: |
-          echo "PLAN RUN ID           = ${{ github.event.workflow_run.id }}"
-          echo "GITHUB_REPOSITORY     = $GITHUB_REPOSITORY"
-          echo "GITHUB_REPOSITORY_ID  = $GITHUB_REPOSITORY_ID"
-          echo "GITHUB_REF            = $GITHUB_REF"
-
-      # ¿Existe artefacto "tfplan" en el run del Plan?
       - name: Find tfplan artifact
         id: find
         uses: actions/github-script@v7
@@ -260,45 +254,87 @@ jobs:
             });
             const a = data.artifacts.find(x => x.name === 'tfplan' && !x.expired);
             core.setOutput('has_tfplan', a ? 'true' : 'false');
+            core.setOutput('artifact_id', a ? String(a.id) : '');
+            core.info('Artifacts found: ' + data.artifacts.map(x => `${x.name}#${x.id} expired=${x.expired}`).join(', '));
 
-      - name: No changes, skipping
-        if: ${{ steps.find.outputs.has_tfplan != 'true' }}
-        run: echo "No tfplan artifact -> no changes. Skipping apply."
+      - name: Echo has_tfplan (debug)
+        run: echo "has_tfplan=${{ steps.find.outputs.has_tfplan }} artifact_id=${{ steps.find.outputs.artifact_id }} plan_run_id=${{ github.event.workflow_run.id }}"
 
-      # === Solo si hay cambios ===
+  apply:
+    needs: detect
+    if: ${{ needs.detect.outputs.has_tfplan == 'true' }}
+    runs-on: ubuntu-latest
+    environment: bootstrap            # pedirá aprobación aquí
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Auth to GCP via WIF
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account:           ${{ secrets.TF_SA_EMAIL }}
 
       - name: Setup Terraform
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
 
       - name: Terraform Init
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
         run: terraform init -input=false
 
+      - name: List artifacts (debug)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run_id = ${{ needs.detect.outputs.plan_run_id }};
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              run_id
+            });
+            core.info('Artifacts: ' + data.artifacts.map(a => `${a.name}#${a.id} expired=${a.expired}`).join(', '));
+
       - name: Download tfplan from Plan run
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
+        id: download_tfplan
         uses: actions/download-artifact@v4
         with:
           name: tfplan
           path: Bootstrap
-          run-id: ${{ github.event.workflow_run.id }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.detect.outputs.plan_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Gate de aprobación manual SOLO si hay cambios
-      - name: Require approval
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
-        environment: bootstrap        # configura reviewers en Settings → Environments → bootstrap
-        run: echo "Awaiting approval…"
+      # Fallback si la descarga estándar falla (descarga ZIP por API y lo descomprime)
+      - name: Fallback download via API
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const idStr = '${{ needs.detect.outputs.artifact_id }}';
+            if (!idStr) { core.setFailed('No artifact_id to fallback'); return; }
+            const artifact_id = parseInt(idStr, 10);
+            const res = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              artifact_id,
+              archive_format: 'zip'
+            });
+            fs.mkdirSync('Bootstrap', { recursive: true });
+            fs.writeFileSync('Bootstrap/tfplan.zip', Buffer.from(res.data));
+
+      - name: Unzip tfplan (fallback)
+        if: always() && steps.download_tfplan.outcome == 'failure'
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y unzip >/dev/null
+          unzip -o Bootstrap/tfplan.zip -d Bootstrap
+          ls -la Bootstrap
+
+      - name: Ensure tfplan exists
+        run: |
+          test -f tfplan || { echo "tfplan not found"; exit 1; }
 
       - name: Check for destroy actions
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
         run: |
           terraform show -no-color tfplan | grep -q '^- ' && {
             echo "ERROR: Plan includes destroy, refusing to auto-apply"
@@ -306,12 +342,10 @@ jobs:
           } || echo "No destroy detected"
 
       - name: Terraform Apply
-        if: ${{ steps.find.outputs.has_tfplan == 'true' }}
         run: terraform apply -input=false -lock-timeout=3m -auto-approve tfplan
 
-
 ```  
-  ***Por qué:*** solo se ejecuta en main, autentica por WIF, fija versión de Terraform y evita carreras.
+  ***Por qué:*** solo se ejecuta en main, autentica por WIF, fija versión de Terraform, evita carreras y solo responde a environment por mi usuario.
 
 ### 2) Backend y configuracion de Terraform (Bootstrap)  
 **Opción minima**: si no quieres gestionar Bootstrap con Terraform, solo se deja el backend para futuras ampliaciones.
@@ -606,8 +640,21 @@ Verifica:
 
   * Workflow se ejecuta en main y permissions: id-token: write.
 
+## 5) Capturas y Gifs mostrando el correcto funcionamiento del bootstrap
 
-## 4) Buenas prácticas clave
+En esta seccion se almacenan capturas y gifs donde se observan las funciones de los workflows funcionando perfectamente.
+
+Despues de una exaustiva configuracion en su workflow, ambos funcionan sin errores.  
+
+![alt text](image.png)
+
+El Workflow de Plan gestiona basicamente los recursos y elementos necesarios para el funcionamiento del Bootstrap y crea un tfplan mostrando lo que se agrega, se quita o se actualiza, despues dicho tfplan se añade como **Artifact** el cual nos permite descargarlo como .zip para asi poder ver la configuracion.  
+
+![alt text](image-1.png)
+
+
+
+## 6) Buenas prácticas clave
 
 * Sin JSON keys (solo WIF).
 
@@ -625,7 +672,7 @@ Verifica:
 
 Toda informacion sacada de mi propia experiencia y aprendizaje, ademas de verificar guias oficiales de Google Cloud.
 
-## Referencias oficiales
+## 7) Referencias oficiales
 
 ### Google Cloud
 - Configure WIF para pipelines (GitHub Actions, etc.): https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines  :contentReference[oaicite:0]{index=0}

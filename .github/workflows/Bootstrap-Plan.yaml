@@ -78,6 +78,13 @@ jobs:
       - name: Echo changed (debug)
         run: echo "changed=${{ steps.plan.outputs.changed }} exitcode=${{ steps.plan.outputs.exitcode }}"
 
+      - name: Guard: only allow specific users to force
+        if: ${{ inputs.force_upload == true && !contains('S4M73l09', github.actor) }}
+        run: |
+          echo "No estas autorizado para usar force_upload (actor=${GITHUB_ACTOR})"
+          exit 1
+
+
       - name: Debug force flag
         run: |
           echo "force_upload=${{ inputs.force_upload }} | changed=${{ steps.plan.outputs.changed }} | exitcode=${{ steps.plan.outputs.exitcode }}"
@@ -89,7 +96,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload tfplan artifact
-        if: steps.plan.outputs.changed == 'true' || inputs.force_upload == true
+        if: ${{ steps.plan.outputs.changed == 'true' || inputs.force_upload == true }}
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
@@ -97,7 +104,7 @@ jobs:
           retention-days: 3
 
       # Opcional: artefacto de texto legible
-      - name: Render plan to text
+      - name: Render plan to text (always)
         if: steps.plan.outputs.changed == 'true'
         run: terraform show -no-color tfplan > plan.txt || echo "No tfplan file" > plan.txt
 
