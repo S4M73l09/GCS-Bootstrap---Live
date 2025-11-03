@@ -78,13 +78,13 @@ jobs:
       - name: Echo changed (debug)
         run: echo "changed=${{ steps.plan.outputs.changed }} exitcode=${{ steps.plan.outputs.exitcode }}"
 
+       # Esta linea se encarga de proteger el force y que solo el usuario autorizado pueda usarlo.
       - name: Guard: only allow specific users to force
         if: ${{ inputs.force_upload == true && !contains('S4M73l09', github.actor) }}
         shell: bash
         run: |
           echo "No estas autorizado para usar force_upload (actor=${GITHUB_ACTOR})"
           exit 1
-
 
       - name: Debug force flag
         run: |
