@@ -676,12 +676,13 @@ Aqui la captura de como esta aplicado correctamente.
 <details>
   <summary><b>Demo: tfplan (25s)</b></summary>
 
-  <video src="https://github.com/user-attachments/assets/8a3d398d-df9d-4d93-9b2a-17baf0caa1a7"
+  <video 
+        src="https://github.com/user-attachments/assets/8a3d398d-df9d-4d93-9b2a-17baf0caa1a7"
         controls   
         muted  
         playsinline  
         preload="metadata"  
-        width="max-width:100%;width:100%;height:auto;">
+        style="max-width:100%;width:100%;height:auto;">
   </video>
 
   <p><a href="https://github.com/user-attachments/assets/8a3d398d-df9d-4d93-9b2a-17baf0caa1a7" target="_blank" rel="noopener">Abrir en nueva pestaña</a></p> 
@@ -695,12 +696,13 @@ Aqui la captura de como esta aplicado correctamente.
 <details>  
   <summary><b>Demo: tfplan Apply + Detect (19s)</b></summary>  
 
-  <video src="https://github.com/user-attachments/assets/b555dd0d-7ac2-4ab5-9d01-c2bdb76e4f1f"
+  <video 
+        src="https://github.com/user-attachments/assets/b555dd0d-7ac2-4ab5-9d01-c2bdb76e4f1f"
         controls  
         muted
         playsinline
         preload="metadata"
-        width="max-width:100%;width:100%;height:auto;">
+        style="max-width:100%;width:100%;height:auto;">
   </video>    
 
   <p><a href="https://github.com/user-attachments/assets/b555dd0d-7ac2-4ab5-9d01-c2bdb76e4f1f" target="_blank" rel="noopener">Abrir en nueva Pestaña</a></p>   
