@@ -652,6 +652,23 @@ El Workflow de Plan gestiona basicamente los recursos y elementos necesarios par
 
 ![alt text](media/image-1.png)
 
+Con ello, ya tenemos el plan subido y ahora se encargara el siguiente Workflow de aplicarlo correctamente, el aplicar no lo hara de manera automatica, si no que antes debemos verificar que somos nosotros, por metodos de seguridad el despliegue esta protegido por ***Environment*** y tambien por usuario, hasta que yo no apruebe dicha confirmacion, no se aplicara nada. Es un metodo de seguridad altamente recomendable.
+
+El workflow de Apply detecta primero el tfplan dejado por el Workflow anterior.
+
+![alt text](<media/Bootstrap apply detect.png>)
+
+y despues podemos aplicar.
+
+![alt text](<media/Captura de primer despliegue.png>)
+
+Esta captura muestra el primer despliegue.
+
+Aqui la captura de como esta aplicado correctamente.
+
+![alt text](<media/Bootstrap apply.png>)  
+
+
 
 
 ## 6) Buenas prácticas clave
