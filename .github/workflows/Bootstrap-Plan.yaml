@@ -80,6 +80,7 @@ jobs:
 
       - name: Guard: only allow specific users to force
         if: ${{ inputs.force_upload == true && !contains('S4M73l09', github.actor) }}
+        shell: bash
         run: |
           echo "No estas autorizado para usar force_upload (actor=${GITHUB_ACTOR})"
           exit 1
