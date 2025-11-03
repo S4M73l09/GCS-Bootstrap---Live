@@ -646,11 +646,11 @@ En esta seccion se almacenan capturas y gifs donde se observan las funciones de 
 
 Despues de una exaustiva configuracion en su workflow, ambos funcionan sin errores.  
 
-![alt text](image.png)
+![alt text](media/image.png)
 
 El Workflow de Plan gestiona basicamente los recursos y elementos necesarios para el funcionamiento del Bootstrap y crea un tfplan mostrando lo que se agrega, se quita o se actualiza, despues dicho tfplan se añade como **Artifact** el cual nos permite descargarlo como .zip para asi poder ver la configuracion.  
 
-![alt text](image-1.png)
+![alt text](media/image-1.png)
 
 
 
