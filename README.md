@@ -1,4 +1,4 @@
-# Gcloud-Bootstrap-live
+# Gcloud-Bootstrap-live ES -> [EN](README.en.md)
 
 ## Objetivo  
 Separar Bootstrap (infra base y seguridad) de Live (infra real) con Terraform + GitHub Actions + Workload Identity Federation (WIF) — sin claves JSON, bloqueo por rama main y restricciones por IDs de GitHub.  
